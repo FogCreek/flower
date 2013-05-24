@@ -87,34 +87,34 @@
 
   <table class="table table-bordered table-striped">
     <thead>
-    <tr>
-      <th>Name</th>
-      <th>UUID</th>
-      <th>State</th>
-      <th>args</th>
-      <th>kwargs</th>
+      <th>Task</th>
       <th>Result</th>
-    </tr>
     </thead>
     <tbody>
     {% for uuid, task in tasks %}
     <tr>
-      <td>{{ getattr(task, 'name', None) }}</td>
-      <td><a href="{{ absolute_url('/task/' + task.uuid) }}">{{ task.uuid }}</a></td>
       <td>
-        {% if task.state == "SUCCESS" %}
+        <p><a href="{{ absolute_url('/task/' + task.uuid) }}"><b>{{ getattr(task, 'name', None) }}</b>: {{ task.uuid }}</a></p>
+        <p>args: <code>{{ humanize(task.args, length=100) }}</code></p>
+        <p>kwargs: <code>{{ humanize(task.kwargs, length=100) }}</code></p>
+      </td>
+      <td>
+        <p>
+          {% if task.state == "SUCCESS" %}
           <span class="label label-success">{{ task.state }}</span>
-        {% elif task.state == "FAILURE" %}
+          {% elif task.state == "FAILURE" %}
           <span class="label label-important">{{ task.state }}</span>
-        {% else %}
+          {% else %}
           <span class="label label-default">{{ task.state }}</span>
+          {% end %}
+        </p>
+        {% if task.result %}
+        <pre>{{ humanize(task.result, length=50) }}</pre>
         {% end %}
       </td>
-      <td>{{ humanize(task.args, length=20) }}</td>
-      <td>{{ humanize(task.kwargs, length=20) }}</td>
-      <td>{{ task.result }}</td>
     </tr>
     {% end %}
+    </tbody>
   </table>
   <div>
 {% end %}
