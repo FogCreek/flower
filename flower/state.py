@@ -46,19 +46,23 @@ class State(threading.Thread):
             transport = None
         if transport and transport not in ('amqp', 'redis', 'mongodb'):
             logging.error("Dashboard and worker management commands are "
-                          "not available for '%s' transport" % transport)
+                          "not available for '%s' transport", transport)
             return
 
-        if celery.__version__.rsplit('.', 1)[0] < '3.1':
+        if celery.__version__ < '3.0.0':
             logging.warning("Configuration viewer is not available for "
-                            "Celery versions prior to 3.1")
+                            "Celery versions prior to 3.0")
 
         timeout = settings.CELERY_INSPECT_TIMEOUT / 1000.0
         i = self._celery_app.control.inspect(timeout=timeout)
 
-        broker = Broker(self._celery_app.connection().as_uri(
-                                                include_password=True),
-                        self._broker_api) if self._broker_api else None
+        burl = self._celery_app.connection().as_uri(include_password=True)
+        broker = None
+        if transport == 'amqp' and self._broker_api:
+            broker = Broker(burl, self._broker_api)
+        elif transport == 'redis':
+            broker = Broker(burl)
+
         if transport == 'amqp' and not self._broker_api:
             logging.warning("Broker info is not available if --broker_api "
                             "option is not configured. Also make sure "
@@ -71,34 +75,34 @@ class State(threading.Thread):
                 try_interval *= 2
                 logging.debug('Inspecting workers...')
                 stats = i.stats()
-                logging.debug('Stats: %s' % pformat(stats))
+                logging.debug('Stats: %s', pformat(stats))
                 registered = i.registered()
-                logging.debug('Registered: %s' % pformat(registered))
+                logging.debug('Registered: %s', pformat(registered))
                 scheduled = i.scheduled()
-                logging.debug('Scheduled: %s' % pformat(scheduled))
+                logging.debug('Scheduled: %s', pformat(scheduled))
                 active = i.active()
-                logging.debug('Active: %s' % pformat(active))
+                logging.debug('Active: %s', pformat(active))
                 reserved = i.reserved()
-                logging.debug('Reserved: %s' % pformat(reserved))
+                logging.debug('Reserved: %s', pformat(reserved))
                 revoked = i.revoked()
-                logging.debug('Revoked: %s' % pformat(revoked))
+                logging.debug('Revoked: %s', pformat(revoked))
                 ping = i.ping()
-                logging.debug('Ping: %s' % pformat(ping))
+                logging.debug('Ping: %s', pformat(ping))
                 active_queues = i.active_queues()
-                logging.debug('Active queues: %s' % pformat(active_queues))
+                logging.debug('Active queues: %s', pformat(active_queues))
                 # Inspect.conf was introduced in Celery 3.1
                 conf = hasattr(i, 'conf') and i.conf()
-                logging.debug('Conf: %s' % pformat(conf))
+                logging.debug('Conf: %s', pformat(conf))
 
                 try:
-                    if self._broker_api:
+                    if broker:
                         broker_queues = broker.queues(self.active_queue_names)
                     else:
                         broker_queues = None
-                    logging.debug('Broker queues: %s' % pformat(broker_queues))
+                    logging.debug('Broker queues: %s', pformat(broker_queues))
                 except Exception as e:
                     broker_queues = []
-                    logging.error("Failed to inspect the broker: %s" % e)
+                    logging.error("Failed to inspect the broker: %s", e)
                     logging.debug(e, exc_info=True)
 
                 with self._update_lock:
@@ -121,11 +125,14 @@ class State(threading.Thread):
                 self._inspect.wait()
 
             except (KeyboardInterrupt, SystemExit):
-                import thread
+                try:
+                    import _thread as thread
+                except ImportError:
+                    import thread
                 thread.interrupt_main()
             except Exception as e:
                 logging.error("Failed to inspect workers: '%s', trying "
-                              "again in %s seconds" % (e, try_interval))
+                              "again in %s seconds", e, try_interval)
                 logging.debug(e, exc_info=True)
                 time.sleep(try_interval)
 

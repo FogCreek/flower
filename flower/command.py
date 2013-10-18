@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import print_function
 
 import atexit
 import logging
@@ -10,6 +11,7 @@ from tornado.options import define, options, parse_command_line
 from celery.bin.base import Command
 
 from . import settings
+from . import __version__
 from .app import Flower
 
 
@@ -30,13 +32,17 @@ define("db", type=str, default='flower.db', help="flower database file")
 define("persistent", type=bool, default=False, help="enable persistent mode")
 define("broker_api", type=str, default=None,
         help="inspect broker e.g. http://guest:guest@localhost:15672/api/")
+define("certfile", type=str, default=None, help="path to SSL certificate file")
+define("keyfile", type=str, default=None, help="path to SSL key file")
+define("xheaders", type=bool, default=False,
+       help="enable support for the 'X-Real-Ip' and 'X-Scheme' headers.")
 
 
 class FlowerCommand(Command):
 
-    def run_from_argv(self, prog_name, argv=None):
+    def run_from_argv(self, prog_name, argv=None, **_kwargs):
         app_settings = settings.APP_SETTINGS
-        argv = filter(self.flower_option, argv)
+        argv = list(filter(self.flower_option, argv))
         parse_command_line([prog_name] + argv)
         app_settings['debug'] = options.debug
 
@@ -56,10 +62,12 @@ class FlowerCommand(Command):
                         **app_settings)
         atexit.register(flower.stop)
 
-        logging.info('Visit me at http://%s:%s' %
-                    (options.address or 'localhost', options.port))
+        logging.info('Visit me at http%s://%s:%s',
+                     's' if flower.ssl else '',
+                     options.address or 'localhost',
+                     options.port)
         logging.info('Broker: %s', self.app.connection().as_uri())
-        logging.debug('Settings: %s' % pformat(app_settings))
+        logging.debug('Settings: %s', pformat(app_settings))
 
         try:
             flower.start()
@@ -68,6 +76,11 @@ class FlowerCommand(Command):
 
     def handle_argv(self, prog_name, argv=None):
         return self.run_from_argv(prog_name, argv)
+
+    def early_version(self, argv):
+        if '--version' in argv:
+            print(__version__, file=self.stdout)
+            super(FlowerCommand, self).early_version(argv)
 
     @staticmethod
     def flower_option(arg):

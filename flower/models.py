@@ -21,16 +21,15 @@ class WorkersModel(BaseModel):
         self.workers = OrderedDict()
 
         state = self.app.state
-        for workername, stat in sorted(state.stats.iteritems()):
+        for workername, stat in sorted(state.stats.items()):
             pool = stat.get('pool') or {}
             self.workers[workername] = dict(
                 status=(workername in state.ping),
                 concurrency=pool.get('max-concurrency'),
-                completed_tasks=sum(stat['total'].itervalues()),
+                completed_tasks=sum(stat.get('total', {}).values()),
                 running_tasks=len(state.active_tasks.get(workername, [])),
-                queues=map(lambda x: x['name'],
-                           state.active_queues.get(
-                           workername, [])),
+                queues=[x['name'] for x in
+                        state.active_queues.get(workername, []) if x]
             )
 
     @classmethod
@@ -39,7 +38,7 @@ class WorkersModel(BaseModel):
 
     @classmethod
     def get_workers(cls, app):
-        return app.state.stats.keys()
+        return list(app.state.stats.keys())
 
     @classmethod
     def is_worker(cls, app, workername):
@@ -60,8 +59,8 @@ class WorkerModel(BaseModel):
         self.scheduled_tasks = state.scheduled_tasks.get(name, {})
         self.active_queues = state.active_queues.get(name, {})
         self.revoked_tasks = state.revoked_tasks.get(name, [])
-        self.registered_tasks = filter(lambda x: not x.startswith('celery.'),
-                                       state.registered_tasks.get(name, {}))
+        self.registered_tasks = [x for x in state.registered_tasks.get(
+                                 name, {}) if not x.startswith('celery.')]
         self.reserved_tasks = state.reserved_tasks.get(name, {})
         self.conf = state.conf.get(name, {})
 
@@ -89,8 +88,9 @@ class TaskModel(BaseModel):
         task = app.events.state.tasks[task_id]
 
         self._fields = task._defaults.keys()
-        for name, value in task.info(fields=self._fields).iteritems():
-            setattr(self, name, value)
+        for name in self._fields:
+            if hasattr(task, name):
+                setattr(self, name, getattr(task, name))
 
     @classmethod
     def get_task_by_id(cls, app, task_id):

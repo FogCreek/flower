@@ -17,9 +17,16 @@ from ..views import BaseHandler
 
 class BaseTaskHandler(BaseHandler):
     def get_task_args(self):
-        options = json_decode(self.request.body)
+        try:
+            options = json_decode(self.request.body)
+        except ValueError as e:
+            raise HTTPError(400, str(e))
         args = options.pop('args', [])
         kwargs = options.pop('kwargs', {})
+
+        if not isinstance(args, (list, tuple)):
+            raise HTTPError(400, 'args must be an array')
+
         return args, kwargs, options
 
     @staticmethod
@@ -36,9 +43,15 @@ class TaskAsyncApply(BaseTaskHandler):
         celery = self.application.celery_app
 
         args, kwargs, options = self.get_task_args()
-        logging.debug("Invoking task '%s' with '%s' and '%s'" %
-                     (taskname, args, kwargs))
-        result = celery.send_task(taskname, args=args, kwargs=kwargs)
+        logging.debug("Invoking task '%s' with '%s' and '%s'",
+                      taskname, args, kwargs)
+
+        try:
+            task = celery.tasks[taskname]
+        except KeyError:
+            raise web.HTTPError(404, "Unknown task '%s'" % taskname)
+
+        result = task.apply_async(args=args, kwargs=kwargs, **options)
         response = {'task-id': result.task_id}
         if self.backend_configured(result):
             response.update(state=result.state)
@@ -68,7 +81,6 @@ class TaskResult(BaseTaskHandler):
             return repr(result)
         else:
             return result
-
 
 
 class ListTasks(BaseTaskHandler):
